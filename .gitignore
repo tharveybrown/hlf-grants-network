@@ -8,13 +8,18 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-# dist - COMMENTED OUT: We need dist/ for Replit deployment
+dist
 dist-ssr
 *.local
 
 # Large data files (keep locally, don't commit)
 data/irs_bulk/
+data/complete-grants-dataset.json
 .cache/
+
+# Large JSON file - will be hosted on GitHub Releases instead
+public/grants-network-data.json
+dist/grants-network-data.json
 
 # Editor directories and files
 .vscode/*
