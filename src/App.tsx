@@ -40,11 +40,11 @@ function App() {
     setError(null);
 
     try {
-      // Load pre-filtered network data with embedded grant metadata from GitHub Release
-      const networkResponse = await fetch('https://github.com/tharveybrown/hlf-grants-network/releases/download/v1.0.0/grants-network-data.json');
+      // Load pre-filtered network data via API endpoint (avoids CORS issues)
+      const networkResponse = await fetch('/api/grants-network-data');
 
       if (!networkResponse.ok) {
-        throw new Error('Failed to load network data from GitHub Release.');
+        throw new Error('Failed to load network data from server.');
       }
 
       const fullNetworkData = await networkResponse.json();

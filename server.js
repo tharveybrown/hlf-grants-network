@@ -13,6 +13,21 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
+// API endpoint to proxy GitHub Release data (avoids CORS issues)
+app.get('/api/grants-network-data', async (req, res) => {
+  try {
+    const response = await fetch('https://github.com/tharveybrown/hlf-grants-network/releases/download/v1.0.0/grants-network-data.json');
+    if (!response.ok) {
+      throw new Error(`GitHub fetch failed: ${response.status}`);
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching grants data:', error);
+    res.status(500).json({ error: 'Failed to fetch grants network data from GitHub Release' });
+  }
+});
+
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, 'dist')));
 

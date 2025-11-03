@@ -11,8 +11,12 @@ export default defineConfig({
     hmr: {
       clientPort: 443
     },
+    allowedHosts: ["c65e8c44-1323-463c-a434-43ecd18acbc3-00-2jtcwtdasi5e4.spock.replit.dev"],
     proxy: {
-      '/api': 'http://localhost:4000'
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      }
     }
   }
 })
