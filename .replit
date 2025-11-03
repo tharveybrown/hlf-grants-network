@@ -5,8 +5,9 @@ modules = ["nodejs-20"]
 channel = "stable-23_11"
 
 [deployment]
-run = ["sh", "-c", "npm run build && npm start"]
-deploymentTarget = "cloudrun"
+run = ["npm", "start"]
+deploymentTarget = "autoscale"
+build = ["npm", "run", "build"]
 
 [[ports]]
 localPort = 3000
