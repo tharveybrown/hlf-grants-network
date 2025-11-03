@@ -1,10 +1,10 @@
-run = "npm start"
+run = "npm run build && npm start"
 
 [nix]
 channel = "stable-23_11"
 
 [deployment]
-run = ["sh", "-c", "npm start"]
+run = ["sh", "-c", "npm run build && npm start"]
 deploymentTarget = "cloudrun"
 
 [[ports]]
