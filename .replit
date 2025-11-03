@@ -40,6 +40,12 @@ args = "dev-server"
 [[workflows.workflow]]
 name = "dev-server"
 author = "agent"
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm start"
+waitForPort = 3000
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
