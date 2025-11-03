@@ -8,6 +8,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Health check endpoint for Replit
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -19,4 +24,6 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 HLF Grants Network running on port ${PORT}`);
   console.log(`🔒 Password protected with: hlf2025`);
+  console.log(`📂 Serving from: ${path.join(__dirname, 'dist')}`);
+  console.log(`✅ Server ready at http://0.0.0.0:${PORT}`);
 });
