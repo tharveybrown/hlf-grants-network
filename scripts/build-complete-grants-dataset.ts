@@ -35,13 +35,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- CONFIGURATION ---
-const YEARS = [2023]; // Testing with 2023 only
+// PRODUCTION DEFAULTS (restore these for full dataset):
+const YEARS = [2022, 2023, 2024, 2025]; // Years to process
 const TEST_MODE = false; // Set to true to process only a small number of filings
 const TEST_LIMIT = 200;
 const PROCESS_990 = true; // Set to true to also process Form 990 (public charities)
-const TEST_SINGLE_MONTH = 5; // Set to month number (1-12) to test one month, or null for all months
+const TEST_SINGLE_MONTH = null; // Set to month number (1-12) for testing ONE month, or null for all months
 const CONCURRENCY_LIMIT = 20; // Number of concurrent XML file parsers
 const BATCH_SIZE = 2000; // Process files in batches to control memory usage
+
+// FOR TESTING (uncomment these):
+// const YEARS = [2023];
+// const TEST_SINGLE_MONTH = 5;
 
 // --- PATHS ---
 const DATA_DIR = path.join(__dirname, '..', 'data', 'irs_bulk');
