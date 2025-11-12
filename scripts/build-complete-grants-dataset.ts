@@ -57,6 +57,12 @@ const args = process.argv.slice(2);
 const customEINArg = args.find(arg => arg.startsWith('--ein='));
 const CUSTOM_EIN = customEINArg ? customEINArg.split('=')[1] : null;
 
+// Helper function to normalize EINs (remove dashes, trim whitespace)
+function normalizeEIN(ein: string | undefined | null): string {
+  if (!ein) return '';
+  return ein.replace(/[^0-9]/g, '').trim();
+}
+
 interface Grant {
   recipientEIN: string;
   recipientName: string;
@@ -247,7 +253,8 @@ async function processXmlFile(filePath: string, year: number): Promise<{ funderE
     const header = data.Return?.ReturnHeader?.[0];
     if (!root || !header || !root.IRS990PF) return null;
 
-    const funderEIN = header.Filer?.[0]?.EIN?.[0];
+    const rawFunderEIN = header.Filer?.[0]?.EIN?.[0];
+    const funderEIN = normalizeEIN(rawFunderEIN);
     const funderName = header.Filer?.[0]?.BusinessName?.[0]?.BusinessNameLine1Txt?.[0] || `Foundation ${funderEIN}`;
     // Use the tax year from XML - this is when the grant actually occurred
     const taxYear = parseInt(header.TaxYr?.[0] || year.toString(), 10);
@@ -310,9 +317,9 @@ async function processXmlFile(filePath: string, year: number): Promise<{ funderE
 
 /**
  * Parse Form 990 XML file for organization data
- * Returns organization metadata (no grants given, only received if reported)
+ * Returns organization metadata and grants from Schedule I (if present)
  */
-async function parseXML990File(filePath: string, year: number): Promise<{ ein: string; name: string; metadata: any } | null> {
+async function parseXML990File(filePath: string, year: number): Promise<{ ein: string; name: string; metadata: any; grants?: Grant[] } | null> {
   try {
     const xmlContent = fs.readFileSync(filePath, 'utf-8');
 
@@ -344,7 +351,37 @@ async function parseXML990File(filePath: string, year: number): Promise<{ ein: s
       revenue: parseFloat(irs990?.CYTotalRevenueAmt?.[0] || irs990?.TotalRevenueCurrentYearAmt?.[0] || '0')
     };
 
-    return { ein, name, metadata };
+    // Parse Schedule I grants (if present)
+    const grants: Grant[] = [];
+    const scheduleI = root.IRS990ScheduleI?.[0];
+    const recipientTables = scheduleI?.RecipientTable || [];
+
+    for (const recipient of recipientTables) {
+      const recipientName = recipient.RecipientBusinessName?.[0]?.BusinessNameLine1Txt?.[0] ||
+                            recipient.RecipientPersonNm?.[0] || '';
+      const recipientEIN = normalizeEIN(recipient.RecipientEIN?.[0]);
+      const amount = parseFloat(recipient.CashGrantAmt?.[0] || '0');
+
+      // Extract address information
+      const recAddress = recipient.USAddress?.[0] || recipient.ForeignAddress?.[0];
+      const recipientCity = recAddress?.CityNm?.[0] || '';
+      const recipientState = recAddress?.StateAbbreviationCd?.[0] || '';
+      const recipientZip = recAddress?.ZIPCd?.[0] || '';
+
+      if (recipientName && amount > 0) {
+        grants.push({
+          recipientEIN,
+          recipientName,
+          amount,
+          year, // Use the year parameter (tax year)
+          recipientCity,
+          recipientState,
+          recipientZip
+        });
+      }
+    }
+
+    return { ein: normalizeEIN(ein), name, metadata, grants: grants.length > 0 ? grants : undefined };
   } catch (error: any) {
     // Silently skip parsing errors for 990s (many format variations)
     return null;
@@ -1087,7 +1124,7 @@ async function main() {
 
         // Define result types for clarity
         type PFResult = { type: 'pf'; data: { funderEIN: string; funderName: string; grants: Grant[]; metadata?: any } };
-        type OrgResult = { type: 'org'; data: { ein: string; name: string; metadata: any } };
+        type OrgResult = { type: 'org'; data: { ein: string; name: string; metadata: any; grants?: Grant[] } };
         type BatchResult = PFResult | OrgResult | null;
 
         // Open file stream for org data - write incrementally instead of accumulating in memory
@@ -1199,38 +1236,66 @@ async function main() {
     }  // end chunks loop
   }  // end year loop
 
+  // Pre-process Form 990 data: extract grant-makers and add to allGrantsData
+  if (PROCESS_990 && allOrgData.length > 0) {
+    console.log(`\n📝 Processing ${allOrgData.length} Form 990 organizations...`);
+    let grantMakers = 0;
+
+    for (const org of allOrgData) {
+      if (org.grants && org.grants.length > 0) {
+        // Add Form 990 grant-makers to allGrantsData (so they're processed bidirectionally)
+        allGrantsData.push({
+          funderEIN: org.ein,
+          funderName: org.name,
+          grants: org.grants,
+          metadata: org.metadata
+        });
+        grantMakers++;
+      }
+    }
+
+    console.log(`   Found ${grantMakers} grant-making organizations (Form 990 with Schedule I)`);
+  }
+
   console.log('\n🕸️  Building final bidirectional dataset...');
   const dataset = buildBidirectionalDataset(allGrantsData);
 
-  // Merge Form 990 organization data into dataset
+  // Add non-grant-making Form 990 orgs to dataset.organizations
   if (PROCESS_990 && allOrgData.length > 0) {
-    console.log(`\n📝 Merging ${allOrgData.length} Form 990 organizations into dataset...`);
-    let added = 0;
+    console.log(`\n📝 Adding non-grant-making Form 990 organizations to dataset...`);
+    let addedOrgs = 0;
     let updated = 0;
 
     for (const org of allOrgData) {
       if (!org.ein) continue;
 
-      if (!dataset.organizations[org.ein]) {
-        // Add new organization from Form 990
-        dataset.organizations[org.ein] = {
-          ein: org.ein,
-          name: org.name,
-          grantsReceived: [],
-          metadata: org.metadata
-        };
-        added++;
-      } else {
-        // Update existing organization's metadata if it's missing
-        if (!dataset.organizations[org.ein].metadata) {
-          dataset.organizations[org.ein].metadata = org.metadata;
-          updated++;
+      // Skip grant-makers (already processed above)
+      if (org.grants && org.grants.length > 0) {
+        continue;
+      }
+
+      {
+        // No grants, add to organizations (grantees only)
+        if (!dataset.organizations[org.ein]) {
+          dataset.organizations[org.ein] = {
+            ein: org.ein,
+            name: org.name,
+            grantsReceived: [],
+            metadata: org.metadata
+          };
+          addedOrgs++;
+        } else {
+          // Update existing organization's metadata if it's missing
+          if (!dataset.organizations[org.ein].metadata) {
+            dataset.organizations[org.ein].metadata = org.metadata;
+            updated++;
+          }
         }
       }
     }
 
-    console.log(`   Added ${added} new organizations from Form 990`);
-    console.log(`   Updated ${updated} existing organizations with Form 990 metadata`);
+    console.log(`   Added ${addedOrgs} non-grant-making organizations from Form 990`);
+    console.log(`   Updated ${updated} existing entries with Form 990 metadata`);
 
     // Consolidate placeholder entries with real EINs
     console.log(`\n🔗 Consolidating placeholder entries with real EINs...`);
