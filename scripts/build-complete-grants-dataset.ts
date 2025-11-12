@@ -35,10 +35,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- CONFIGURATION ---
-const YEARS = [2023, 2024, 2025];
+const YEARS = [2023]; // Testing with 2023 only
 const TEST_MODE = false; // Set to true to process only a small number of filings
 const TEST_LIMIT = 200;
 const PROCESS_990 = true; // Set to true to also process Form 990 (public charities)
+const TEST_SINGLE_MONTH = 5; // Set to month number (1-12) to test one month, or null for all months
 const CONCURRENCY_LIMIT = 20; // Number of concurrent XML file parsers
 const BATCH_SIZE = 2000; // Process files in batches to control memory usage
 
@@ -355,6 +356,16 @@ async function parseXML990File(filePath: string, year: number): Promise<{ ein: s
     const grants: Grant[] = [];
     const scheduleI = root.IRS990ScheduleI?.[0];
     const recipientTables = scheduleI?.RecipientTable || [];
+
+    // Debug logging for EIN 113422729
+    if (normalizeEIN(ein) === '113422729') {
+      console.log(`🔍 DEBUG: Found Brooklyn Community Foundation (EIN: ${ein})`);
+      console.log(`   Has IRS990ScheduleI: ${!!scheduleI}`);
+      console.log(`   RecipientTable count: ${recipientTables.length}`);
+      if (scheduleI) {
+        console.log(`   Schedule I keys:`, Object.keys(scheduleI));
+      }
+    }
 
     for (const recipient of recipientTables) {
       const recipientName = recipient.RecipientBusinessName?.[0]?.BusinessNameLine1Txt?.[0] ||
@@ -1004,19 +1015,20 @@ async function main() {
   setupDirectory(false);
 
   const allGrantsData: Array<{ funderEIN: string; funderName: string; grants: Grant[]; metadata?: any }> = [];
-  const allOrgData: Array<{ ein: string; name: string; metadata: any }> = [];
+  const allOrgData: Array<{ ein: string; name: string; metadata: any; grants?: Grant[] }> = [];
 
   for (const year of YEARS) {
     console.log(`\n🗓️  === PROCESSING YEAR ${year} ===\n`);
 
+    // If TEST_SINGLE_MONTH is set, only process that month
+    const monthsToProcess = TEST_SINGLE_MONTH ? [TEST_SINGLE_MONTH] : Array.from({ length: 12 }, (_, i) => i + 1);
+
     // Process months in parallel chunks of 3 to balance speed and memory
     const MONTHS_PER_CHUNK = 3;
-    for (let chunkStart = 1; chunkStart <= 12; chunkStart += MONTHS_PER_CHUNK) {
-      const chunkEnd = Math.min(chunkStart + MONTHS_PER_CHUNK - 1, 12);
-      const monthsInChunk = [];
-      for (let m = chunkStart; m <= chunkEnd; m++) {
-        monthsInChunk.push(m);
-      }
+    for (let chunkIdx = 0; chunkIdx < monthsToProcess.length; chunkIdx += MONTHS_PER_CHUNK) {
+      const monthsInChunk = monthsToProcess.slice(chunkIdx, chunkIdx + MONTHS_PER_CHUNK);
+      const chunkStart = monthsInChunk[0];
+      const chunkEnd = monthsInChunk[monthsInChunk.length - 1];
 
       console.log(`\n📦 Processing months ${chunkStart}-${chunkEnd} in parallel...`);
 
